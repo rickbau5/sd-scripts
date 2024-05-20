@@ -746,7 +746,7 @@ class NetworkTrainer:
         # training loop
         for epoch in range(num_train_epochs):
             accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
-            if is_event_set:
+            if is_event_set():
                 raise ValueError("Training interrupted by external event")
 
             current_epoch.value = epoch + 1
