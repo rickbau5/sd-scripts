@@ -8,6 +8,7 @@ import time
 import json
 from multiprocessing import Value
 import toml
+from threading import Event
 
 from tqdm import tqdm
 
@@ -41,7 +42,7 @@ from library.custom_train_functions import (
     apply_debiased_estimation,
 )
 from library.utils import setup_logging, add_logging_arguments
-from coordination import is_event_set
+
 
 setup_logging()
 import logging
@@ -137,7 +138,7 @@ class NetworkTrainer:
     def sample_images(self, accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet):
         train_util.sample_images(accelerator, args, epoch, global_step, device, vae, tokenizer, text_encoder, unet)
 
-    def train(self, args):
+    def train(self, args, event: Event):
         session_id = random.randint(0, 2**32)
         training_started_at = time.time()
         train_util.verify_training_args(args)
@@ -746,7 +747,7 @@ class NetworkTrainer:
         # training loop
         for epoch in range(num_train_epochs):
             accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
-            if is_event_set():
+            if event.is_set():
                 raise ValueError("Training interrupted by external event")
 
             current_epoch.value = epoch + 1
@@ -872,13 +873,13 @@ class NetworkTrainer:
                 if accelerator.sync_gradients:
                     progress_bar.update(1)
                     global_step += 1
-                    
-                    if is_event_set():
+
+                    if event.is_set():
                         raise ValueError("Training interrupted by external event")
 
                     self.sample_images(accelerator, args, None, global_step, accelerator.device, vae, tokenizer, text_encoder, unet)
 
-                    if is_event_set():
+                    if event.is_set():
                         raise ValueError("Training interrupted by external event")
 
                     # 指定ステップごとにモデルを保存
@@ -920,7 +921,7 @@ class NetworkTrainer:
 
             # 指定エポックごとにモデルを保存
             if args.save_every_n_epochs is not None:
-                if is_event_set():
+                if event.is_set():
                     raise ValueError("Training interrupted by external event")
 
                 saving = (epoch + 1) % args.save_every_n_epochs == 0 and (epoch + 1) < num_train_epochs
@@ -936,7 +937,7 @@ class NetworkTrainer:
                     if args.save_state:
                         train_util.save_and_remove_state_on_epoch_end(args, accelerator, epoch + 1)
 
-            if is_event_set():
+            if event.is_set():
                 raise ValueError("Training interrupted by external event")
 
             self.sample_images(accelerator, args, epoch + 1, global_step, accelerator.device, vae, tokenizer, text_encoder, unet)
